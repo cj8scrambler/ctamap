@@ -1,6 +1,7 @@
 import math
 import svgwrite
 
+# Line colors taken from CTA website
 REDCOLOR="#c60c30"
 BLUECOLOR="#00a1de"
 BROWNCOLOR="#62361b"
@@ -31,16 +32,20 @@ SCALE = min(WIDTH / (MAX_W_ADDR + MAX_E_ADDR), HEIGHT / (MAX_N_ADDR + MAX_S_ADDR
 # Two different coordinate systems are used here:
 #  Street Addresses: Cartesian coordinates with N/E addresses posistive, S/W addresses negative
 #  SVG coordinates: (0,0) is top left of image and offsets are only positive to the right and down.
-# Lines are described using street addresses, but all angles are calculated in SVG coordinates.
-# 0 degrees is to the right.  Positive angles sweep clockwise.
+# Train lines are described using street addresses (mostly relative), all angles and graphics are
+# calculated in SVG coordinates.  0 degrees is to the right.  Positive angles sweep clockwise.
+
+# Function arguments types are:
+#    address = tuple of Chicago street addresses: [East, North]
+#    blocks = tuple of relative distance in Chicago addresses.  1 block is 100 addresses; [East, North]
+#    coords = tuple of view coordinates [x,y]
 
 class TrainLine:
     """ Class for drawing CTA line maps."""
     def __init__(self, drawing, start_address, color='#b0b0b0', thick=LINE_THICK):
         """ start_address is tuple with initial location in city address coordinates"""
         self._loc = start_address
-        self._angle = None
-#        print("angle initialized to: {}".format(self._angle))
+        self._angle = None # current heading
         self._dwg = drawing
         self._line = drawing.add(drawing.g(stroke=color, stroke_width=thick, fill='none', fill_opacity=0 ))
         self._stations = drawing.add(drawing.g(stroke='black', stroke_width=STATION_THICK, fill='white', fill_opacity=100 ))
@@ -89,7 +94,7 @@ class TrainLine:
         self._line.add(self._dwg.path(d="M %(x0)f,%(y0)f L %(x1)f,%(y1)f"%args))
         self._angle = math.degrees(math.atan2(end[1]-begin[1],end[0]-begin[0]))
         #print("atan({},{}) angle: {}".format(end[1]-begin[1],end[0]-begin[0],self._angle))
-#        print("DrawToAddress angle updated to: {}".format(self._angle))
+        #print("DrawToAddress angle updated to: {}".format(self._angle))
         self._loc = address
         print("M %(x0)f,%(y0)f L %(x1)f,%(y1)f"%args)
 
@@ -109,7 +114,6 @@ class TrainLine:
         self._line.add(self._dwg.path(d="M %(x0)f,%(y0)f L %(x1)f,%(y1)f"%args))
         self._loc = dest
 
-
     def polarToCartesian(self, point, radius, angleInDegrees):
         angleR = math.radians(angleInDegrees)
         return ( [point[0] + (radius * math.cos(angleR)),
@@ -121,7 +125,7 @@ class TrainLine:
             positive degrees: clockwise  """
         vector_radius = self.Scale(radius)
         begin = self.AbsCoord(self._loc)
-        # Center is 90 (same sign as degrees) from current angle
+        # Center of arch is 90 (same sign as degrees) from current angle
         if (degrees > 0):
             center_angle = self._angle + 90
             sweep = 1
@@ -232,6 +236,10 @@ class Loop:
                  drawStations=True, drawStationMarkers=False):
         # Entry points in the loop for each line
         self._entry =  {
+            'blue_west': [-200, -200],
+            'blue_south': None,
+            'red_south': [2000, -3600],
+            'red_north': None,
             'pink': [-200, 200],
             'green_west': [-200, 400],
             'green_south': None,
@@ -245,7 +253,7 @@ class Loop:
                         max([y[1] for y in self._entry.values() if y is not None])]
         
         # Cross point for each loop station
-        self._streets = {
+        self._el_stations = {
             'clark': [1200, None],
             'state': [1900, None],
             'washington': [None, -750],
@@ -253,134 +261,163 @@ class Loop:
             'hwl': [1900,None],
             'lasalle': [1200, None],
             'quincy': [None, -1750],
+            'monroe': [None, -1200],
+            'jackson': [None, -2100],
         }
 
+        if drawBlue:
+            print("#### Blue Line ####")
+            blueline = TrainLine(drawing, self._entry['blue_west'], color=BLUECOLOR)
+            blueline.DrawBlocks([1600,0])
+            blueline.DrawStationIntersection(self._el_stations['clark'])
+            blueline.DrawTurn(90)
+            blueline.DrawBlocks([0,-3200])
+            blueline.DrawStationIntersection(self._el_stations['monroe'])
+            blueline.DrawStationIntersection(self._el_stations['jackson'])
+
+        if drawRed:
+            print("#### Red Line ####")
+            redline = TrainLine(drawing, self._entry['red_south'], color=REDCOLOR)
+            redline.DrawBlocks([0,5000])
+            self._entry['red_north'] = redline.Address(redline._loc)
+            redline.DrawStation([0,-1800])
+            #redline.DrawStation([0,-2600])
+            #redline.DrawStation([0,-3500])
+            redline.DrawStationIntersection(self._el_stations['monroe'])
+            redline.DrawStationIntersection(self._el_stations['jackson'])
                     
-#        if drawBlue:
-#            print("#### Blue Line ####")
-#            _blue = TrainLine(drawing, [-200,0], color=BLUECOLOR)
-#            _blue.DrawBlocks([1800,0])
-#            _blue.DrawTurn(90)
-#            _blue.DrawBlocks([0,-3000])
-#            _blue.DrawTurn(90)
         if drawOrange:
+            # Start at SE corner and go W, N, E, S
             print("#### Loop Orange Line ####")
             orangeline = TrainLine(drawing, self._entry['orange'], color=ORANGECOLOR)
             orangeline.DrawBlocks([0,800])
             orangeline.DrawTurn(-61)
             orangeline.DrawTurn(61)
             orangeline.DrawBlocks([0,2248])
-            orangeline.DrawStationIntersection(self._streets['adams'])
-            orangeline.DrawStationIntersection(self._streets['washington'])
+            orangeline.DrawStationIntersection(self._el_stations['adams'])
+            orangeline.DrawStationIntersection(self._el_stations['washington'])
             orangeline.DrawTurn(-90)
             orangeline.DrawBlocks([-1095,0])
-            orangeline.DrawStationIntersection(self._streets['state'])
-            orangeline.DrawStationIntersection(self._streets['clark'])
+            orangeline.DrawStationIntersection(self._el_stations['state'])
+            orangeline.DrawStationIntersection(self._el_stations['clark'])
             orangeline.DrawTurn(-90)
             orangeline.DrawBlocks([0,-2090])
-            orangeline.DrawStationIntersection(self._streets['washington'])
-            orangeline.DrawStationIntersection(self._streets['quincy'])
+            orangeline.DrawStationIntersection(self._el_stations['washington'])
+            orangeline.DrawStationIntersection(self._el_stations['quincy'])
             orangeline.DrawTurn(-90)
             orangeline.DrawBlocks([1300,0])
-            orangeline.DrawStationIntersection(self._streets['lasalle'])
-            orangeline.DrawStationIntersection(self._streets['hwl'])
+            orangeline.DrawStationIntersection(self._el_stations['lasalle'])
+            orangeline.DrawStationIntersection(self._el_stations['hwl'])
 
         if drawGreen:
+            # Start at NW corner go E, S
             print("#### Loop Green Line ####")
             greenline = TrainLine(drawing, self._entry['green_west'], color=GREENCOLOR)
             greenline.DrawBlocks([2700,0])
-            greenline.DrawStationIntersection(self._streets['state'])
-            greenline.DrawStationIntersection(self._streets['clark'])
+            greenline.DrawStationIntersection(self._el_stations['state'])
+            greenline.DrawStationIntersection(self._el_stations['clark'])
             greenline.DrawTurn(90)
             greenline.DrawBlocks([0,-3800])
-            greenline.DrawStationIntersection(self._streets['washington'])
-            greenline.DrawStationIntersection(self._streets['adams'])
+            self._entry['green_south'] = greenline.Address(greenline._loc)
+            greenline.DrawStationIntersection(self._el_stations['washington'])
+            greenline.DrawStationIntersection(self._el_stations['adams'])
+
         if drawPink:
+            # Start at NW corner go E, S, W, N
             print("#### Loop Pink Line ####")
             pinkline = TrainLine(drawing, self._entry['pink'], color=PINKCOLOR)
             pinkline.DrawBlocks([2500,0])
-            pinkline.DrawStationIntersection(self._streets['clark'])
-            pinkline.DrawStationIntersection(self._streets['state'])
+            pinkline.DrawStationIntersection(self._el_stations['clark'])
+            pinkline.DrawStationIntersection(self._el_stations['state'])
             pinkline.DrawTurn(90)
             pinkline.DrawBlocks([0,-2500])
-            pinkline.DrawStationIntersection(self._streets['washington'])
-            pinkline.DrawStationIntersection(self._streets['adams'])
+            pinkline.DrawStationIntersection(self._el_stations['washington'])
+            pinkline.DrawStationIntersection(self._el_stations['adams'])
             pinkline.DrawTurn(90)
             pinkline.DrawBlocks([-1500,0])
-            pinkline.DrawStationIntersection(self._streets['hwl'])
-            pinkline.DrawStationIntersection(self._streets['lasalle'])
+            pinkline.DrawStationIntersection(self._el_stations['hwl'])
+            pinkline.DrawStationIntersection(self._el_stations['lasalle'])
             pinkline.DrawTurn(90)
             pinkline.DrawBlocks([0,2500])
-            pinkline.DrawStationIntersection(self._streets['quincy'])
-            pinkline.DrawStationIntersection(self._streets['washington'])
+            pinkline.DrawStationIntersection(self._el_stations['quincy'])
+            pinkline.DrawStationIntersection(self._el_stations['washington'])
             pinkline.DrawTurn(-90)
+
         if drawBrown:
+            # Start at NW corner go E, S, W, N (then jog back to origin)
             print("#### Loop Brown Line ####")
             brownline = TrainLine(drawing, self._entry['brown'], color=BROWNCOLOR)
             brownline.DrawBlocks([0,-400])
             brownline.DrawTurn(-90)
             brownline.DrawBlocks([2100,0])
-            brownline.DrawStationIntersection(self._streets['clark'])
-            brownline.DrawStationIntersection(self._streets['state'])
+            brownline.DrawStationIntersection(self._el_stations['clark'])
+            brownline.DrawStationIntersection(self._el_stations['state'])
             brownline.DrawTurn(90)
             brownline.DrawBlocks([0,-3500])
-            brownline.DrawStationIntersection(self._streets['washington'])
-            brownline.DrawStationIntersection(self._streets['adams'])
+            brownline.DrawStationIntersection(self._el_stations['washington'])
+            brownline.DrawStationIntersection(self._el_stations['adams'])
             brownline.DrawTurn(90)
             brownline.DrawBlocks([-2500,0])
-            brownline.DrawStationIntersection(self._streets['hwl'])
-            brownline.DrawStationIntersection(self._streets['lasalle'])
+            brownline.DrawStationIntersection(self._el_stations['hwl'])
+            brownline.DrawStationIntersection(self._el_stations['lasalle'])
             brownline.DrawTurn(90)
             brownline.DrawBlocks([0,3800])
-            brownline.DrawStationIntersection(self._streets['quincy'])
-            brownline.DrawStationIntersection(self._streets['washington'])
+            brownline.DrawStationIntersection(self._el_stations['quincy'])
+            brownline.DrawStationIntersection(self._el_stations['washington'])
             brownline.DrawTurn(90)
             brownline.DrawTurn(-90)
+
         if drawPurple:
+            # Start at NW corner go S, E, N, W
             print("#### Loop Purple Line ####")
             purpleline = TrainLine(drawing, self._entry['purple'], color=PURPLECOLOR)
             purpleline.DrawBlocks([0,-600])
             purpleline.DrawTurn(-90)
             purpleline.DrawBlocks([2100,0])
-            purpleline.DrawStationIntersection(self._streets['clark'])
-            purpleline.DrawStationIntersection(self._streets['state'])
+            purpleline.DrawStationIntersection(self._el_stations['clark'])
+            purpleline.DrawStationIntersection(self._el_stations['state'])
             purpleline.DrawTurn(90)
             purpleline.DrawBlocks([0,-3100])
-            purpleline.DrawStationIntersection(self._streets['washington'])
-            purpleline.DrawStationIntersection(self._streets['adams'])
+            purpleline.DrawStationIntersection(self._el_stations['washington'])
+            purpleline.DrawStationIntersection(self._el_stations['adams'])
             purpleline.DrawTurn(90)
             purpleline.DrawBlocks([-2100,0])
-            purpleline.DrawStationIntersection(self._streets['hwl'])
-            purpleline.DrawStationIntersection(self._streets['lasalle'])
+            purpleline.DrawStationIntersection(self._el_stations['hwl'])
+            purpleline.DrawStationIntersection(self._el_stations['lasalle'])
             purpleline.DrawTurn(90)
             purpleline.DrawBlocks([0,3500])
-            purpleline.DrawStationIntersection(self._streets['quincy'])
-            purpleline.DrawStationIntersection(self._streets['washington'])
+            purpleline.DrawStationIntersection(self._el_stations['quincy'])
+            purpleline.DrawStationIntersection(self._el_stations['washington'])
 
         if drawStationMarkers:
-            for station,loc in self._streets.items():
+            # Draws a line where the stations go
+            for station,loc in self._el_stations.items():
                 if loc[0] is not None:
                     marker = TrainLine(drawing, [loc[0],self._yrange[0]], 'black', thick=1)
                     marker.DrawToAddress([loc[0],self._yrange[1]])
                 elif loc[1] is not None:
                     marker = TrainLine(drawing, [self._xrange[0], loc[1]], 'black', thick=1)
                     marker.DrawToAddress([self._xrange[1], loc[1]])
+
     def GetPink(self):
         return self._entry['pink'];
+
     def GetGreenWest(self):
         return self._entry['green_west'];
+
     def GetGreenSouth(self):
         return self._entry['green_south'];
+
     def GetOrange(self):
         return self._entry['orange'];
 
 dwg = svgwrite.Drawing(filename='graphic.svg', profile='tiny')
 dwg.viewbox(0,0,WIDTH,HEIGHT)
 
-#loop = Loop(dwg)
-#pink = PinkLine(dwg, loop.GetPink())
-loop = Loop(dwg, drawGreen=True, drawBlue=False, drawBrown=False, drawRed=False, drawOrange=False,
-            drawPink=False, drawPurple=False,  drawStationMarkers=True)
+loop = Loop(dwg)
+pink = PinkLine(dwg, loop.GetPink())
+#loop = Loop(dwg, drawGreen=True, drawBlue=False, drawBrown=False, drawRed=False, drawOrange=False,
+#            drawPink=False, drawPurple=False,  drawStationMarkers=True)
 
 #print("Draw maker")
 #marker = [-1200, None]
@@ -396,4 +433,3 @@ loop = Loop(dwg, drawGreen=True, drawBlue=False, drawBrown=False, drawRed=False,
 #greenline.DrawStationIntersection(marker)
 
 dwg.save()
-
